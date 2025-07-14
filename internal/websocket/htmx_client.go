@@ -12,6 +12,20 @@ import (
 	"github.com/samcharles93/yarn/internal/database"
 )
 
+const (
+	// Time allowed to write a message to the peer
+	writeWait = 10 * time.Second
+
+	// Time allowed to read the next pong message from the peer
+	pongWait = 60 * time.Second
+
+	// Send pings to peer with this period. Must be less than pongWait
+	pingPeriod = (pongWait * 9) / 10
+
+	// Maximum message size allowed from peer
+	maxMessageSize = 512
+)
+
 // HTMXClient represents a WebSocket client that sends HTML fragments for HTMX
 type HTMXClient struct {
 	// The websocket connection
@@ -184,7 +198,7 @@ func (c *HTMXClient) SendError(errorMsg string) {
 }
 
 // handleMessage processes incoming messages
-func (c *HTMXClient) handleMessage(msgType string, data map[string]interface{}) {
+func (c *HTMXClient) handleMessage(msgType string, _ map[string]any) {
 	// This would be handled by the main handler
 	// For now, just log the message
 	log.Printf("HTMX Client received message type: %s from user %s", msgType, c.username)

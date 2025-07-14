@@ -23,7 +23,7 @@ func main() {
 	go wsHub.Run()
 
 	// Create handler with session management
-	h := handlers.NewHandler(db, nil, wsHub)
+	h := handlers.NewHandler(db, wsHub)
 
 	// Serve static files from the UI directory
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join("UI", "static")))))
@@ -36,21 +36,12 @@ func main() {
 	http.HandleFunc("/api/chat/", h.SimpleAPIChatHandler)
 
 	// WebSocket routes (HTMX)
-	http.HandleFunc("/ws", h.WebSocketHandler)
 	http.HandleFunc("/ws/htmx", h.HTMXWebSocketHandler)
-
-	// Legacy API routes (for backward compatibility with any existing clients)
-	http.HandleFunc("/api/send", h.SendMessageHandler)
-	http.HandleFunc("/api/messages", h.GetMessagesHandler)
-	http.HandleFunc("/api/file/upload", h.UploadFileHandler)
-	http.HandleFunc("/api/file/download", h.DownloadFileHandler)
-	http.HandleFunc("/api/users", h.GetUsersHandler)
 
 	port := ":8080"
 	log.Printf("🚀 Yarn E2EE Chat Server starting on port %s", port)
 	log.Printf("📱 UI available at: http://localhost%s", port)
-	log.Printf("🔌 WebSocket endpoints:")
-	log.Printf("   - HTMX: ws://localhost%s/ws/htmx", port)
+	log.Printf("🔌 WebSocket endpoint: ws://localhost%s/ws/htmx", port)
 
 	log.Fatal(http.ListenAndServe(port, nil))
 }

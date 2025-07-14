@@ -12,22 +12,10 @@ import (
 	"github.com/samcharles93/yarn/internal/models"
 )
 
-// Hub maintains the set of active clients and broadcasts messages to the clients
+// Hub maintains the set of active HTMX clients and broadcasts messages to the clients
 type Hub struct {
-	// Registered clients
-	clients map[*Client]bool
-
 	// Registered HTMX clients
 	htmxClients map[*HTMXClient]bool
-
-	// Inbound messages from the clients
-	broadcast chan []byte
-
-	// Register requests from the clients
-	register chan *Client
-
-	// Unregister requests from clients
-	unregister chan *Client
 
 	// Register requests from HTMX clients
 	RegisterHTMX chan *HTMXClient
@@ -41,8 +29,7 @@ type Hub struct {
 	// Mutex to protect concurrent access to clients map
 	mu sync.RWMutex
 
-	// User presence tracking (both client types)
-	userPresence     map[uuid.UUID]*Client     // userID -> client
+	// User presence tracking for HTMX clients
 	htmxUserPresence map[uuid.UUID]*HTMXClient // userID -> htmx client
 
 	// Typing status tracking
@@ -53,15 +40,10 @@ type Hub struct {
 // NewHub creates a new websocket hub
 func NewHub(db *database.DB) *Hub {
 	return &Hub{
-		clients:          make(map[*Client]bool),
 		htmxClients:      make(map[*HTMXClient]bool),
-		broadcast:        make(chan []byte),
-		register:         make(chan *Client),
-		unregister:       make(chan *Client),
 		RegisterHTMX:     make(chan *HTMXClient),
 		UnregisterHTMX:   make(chan *HTMXClient),
 		db:               db,
-		userPresence:     make(map[uuid.UUID]*Client),
 		htmxUserPresence: make(map[uuid.UUID]*HTMXClient),
 		typingStatus:     make(map[uuid.UUID]map[uuid.UUID]time.Time),
 	}
@@ -74,61 +56,12 @@ func (h *Hub) Run() {
 
 	for {
 		select {
-		case client := <-h.register:
-			h.registerClient(client)
-
-		case client := <-h.unregister:
-			h.unregisterClient(client)
-
 		case client := <-h.RegisterHTMX:
 			h.registerHTMXClient(client)
 
 		case client := <-h.UnregisterHTMX:
 			h.unregisterHTMXClient(client)
-
-		case message := <-h.broadcast:
-			h.broadcastMessage(message)
 		}
-	}
-}
-
-// registerClient registers a new client
-func (h *Hub) registerClient(client *Client) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	h.clients[client] = true
-	h.userPresence[client.GetUserID()] = client
-
-	log.Printf("Client registered: User %d (%s)", client.GetUserID(), client.GetUsername())
-
-	// Notify other clients that this user is online
-	h.broadcastUserPresence(client.GetUserID(), client.GetUsername(), true)
-
-	// Update user presence in database
-	h.updateUserPresence(client.GetUserID(), true)
-}
-
-// unregisterClient unregisters a client
-func (h *Hub) unregisterClient(client *Client) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	if _, ok := h.clients[client]; ok {
-		delete(h.clients, client)
-		delete(h.userPresence, client.GetUserID())
-		close(client.send)
-
-		log.Printf("Client unregistered: User %d (%s)", client.GetUserID(), client.GetUsername())
-
-		// Notify other clients that this user is offline
-		h.broadcastUserPresence(client.GetUserID(), client.GetUsername(), false)
-
-		// Update user presence in database
-		h.updateUserPresence(client.GetUserID(), false)
-
-		// Clear typing status for this user
-		h.clearUserTypingStatus(client.GetUserID())
 	}
 }
 
@@ -172,139 +105,41 @@ func (h *Hub) unregisterHTMXClient(client *HTMXClient) {
 	}
 }
 
-// broadcastMessage broadcasts a message to all connected clients
-func (h *Hub) broadcastMessage(message []byte) {
+// sendToHTMXUser sends a message to a specific HTMX user if they're online
+func (h *Hub) sendToHTMXUser(userID uuid.UUID, message *WebSocketMessage) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	for client := range h.clients {
-		select {
-		case client.send <- message:
-		default:
-			close(client.send)
-			delete(h.clients, client)
-		}
+	if client, ok := h.htmxUserPresence[userID]; ok {
+		// Convert WebSocket message to appropriate HTML fragment
+		h.sendHTMLToClient(client, message)
 	}
 }
 
-// handleMessage handles incoming websocket messages
-func (h *Hub) handleMessage(client *Client, message *WebSocketMessage) {
+// sendHTMLToClient converts a WebSocket message to HTML and sends it to the client
+func (h *Hub) sendHTMLToClient(client *HTMXClient, message *WebSocketMessage) {
 	switch message.Type {
 	case MessageTypeChat:
-		h.handleChatMessage(client, message)
+		client.SendHTML("message", message)
 	case MessageTypeTypingStart:
-		h.handleTypingStart(client, message)
+		client.SendHTML("typing", message)
 	case MessageTypeTypingStop:
-		h.handleTypingStop(client, message)
+		// Clear typing indicator - send empty HTML or specific clear command
+		client.send <- []byte(`<div class="typing-indicator" style="display:none;"></div>`)
+	case MessageTypeUserOnline, MessageTypeUserOffline:
+		// Update user presence indicator
+		client.SendHTML("presence", message)
+	case MessageTypeFileUpload:
+		client.SendHTML("file", message)
 	case MessageTypeHeartbeat:
-		h.handleHeartbeat(client, message)
+		// HTMX clients don't need heartbeat HTML updates
+		return
 	default:
-		log.Printf("Unknown message type: %s", message.Type)
-		client.sendError("Unknown message type")
+		log.Printf("Unknown message type for HTMX client: %s", message.Type)
 	}
 }
 
-// handleChatMessage handles chat messages
-func (h *Hub) handleChatMessage(client *Client, message *WebSocketMessage) {
-	var chatData ChatMessageData
-	if err := message.ParseData(&chatData); err != nil {
-		log.Printf("Error parsing chat message: %v", err)
-		client.sendError("Invalid chat message format")
-		return
-	}
-
-	// Verify the sender ID matches the client
-	if chatData.SenderID != client.GetUserID() {
-		client.sendError("Sender ID mismatch")
-		return
-	}
-
-	// Send the message to the specific recipient if they're online
-	h.sendToUser(chatData.ReceiverID, message)
-
-	log.Printf("Chat message from %d to %d", chatData.SenderID, chatData.ReceiverID)
-}
-
-// handleTypingStart handles typing start events
-func (h *Hub) handleTypingStart(client *Client, message *WebSocketMessage) {
-	var typingData TypingData
-	if err := message.ParseData(&typingData); err != nil {
-		log.Printf("Error parsing typing start message: %v", err)
-		client.sendError("Invalid typing message format")
-		return
-	}
-
-	// Update typing status
-	h.setTypingStatus(client.GetUserID(), typingData.ChatPartnerID, true)
-
-	// Send typing indicator to the chat partner
-	typingData.UserID = client.GetUserID()
-	typingData.Username = client.GetUsername()
-
-	typingMessage, err := NewWebSocketMessage(MessageTypeTypingStart, typingData)
-	if err != nil {
-		log.Printf("Error creating typing message: %v", err)
-		return
-	}
-
-	h.sendToUser(typingData.ChatPartnerID, typingMessage)
-}
-
-// handleTypingStop handles typing stop events
-func (h *Hub) handleTypingStop(client *Client, message *WebSocketMessage) {
-	var typingData TypingData
-	if err := message.ParseData(&typingData); err != nil {
-		log.Printf("Error parsing typing stop message: %v", err)
-		client.sendError("Invalid typing message format")
-		return
-	}
-
-	// Update typing status
-	h.setTypingStatus(client.GetUserID(), typingData.ChatPartnerID, false)
-
-	// Send typing stop indicator to the chat partner
-	typingData.UserID = client.GetUserID()
-	typingData.Username = client.GetUsername()
-
-	typingMessage, err := NewWebSocketMessage(MessageTypeTypingStop, typingData)
-	if err != nil {
-		log.Printf("Error creating typing stop message: %v", err)
-		return
-	}
-
-	h.sendToUser(typingData.ChatPartnerID, typingMessage)
-}
-
-// handleHeartbeat handles heartbeat messages
-func (h *Hub) handleHeartbeat(client *Client, message *WebSocketMessage) {
-	// Update last seen time in database
-	h.updateUserPresence(client.GetUserID(), true)
-
-	// Send heartbeat response
-	heartbeatData := HeartbeatData{
-		Timestamp: time.Now(),
-	}
-
-	response, err := NewWebSocketMessage(MessageTypeHeartbeat, heartbeatData)
-	if err != nil {
-		log.Printf("Error creating heartbeat response: %v", err)
-		return
-	}
-
-	client.sendMessage(response)
-}
-
-// sendToUser sends a message to a specific user if they're online
-func (h *Hub) sendToUser(userID uuid.UUID, message *WebSocketMessage) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	if client, ok := h.userPresence[userID]; ok {
-		client.sendMessage(message)
-	}
-}
-
-// broadcastUserPresence broadcasts user presence changes to all clients
+// broadcastUserPresence broadcasts user presence changes to all HTMX clients
 func (h *Hub) broadcastUserPresence(userID uuid.UUID, username string, isOnline bool) {
 	presenceData := UserPresenceData{
 		UserID:   userID,
@@ -328,37 +163,18 @@ func (h *Hub) broadcastUserPresence(userID uuid.UUID, username string, isOnline 
 		return
 	}
 
-	// Broadcast to all clients except the user themselves
+	// Broadcast to all HTMX clients except the user themselves
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	for client := range h.clients {
+	for client := range h.htmxClients {
 		if client.GetUserID() != userID {
 			select {
 			case client.send <- messageBytes:
 			default:
 				close(client.send)
-				delete(h.clients, client)
+				delete(h.htmxClients, client)
 			}
-		}
-	}
-}
-
-// setTypingStatus sets the typing status for a user
-func (h *Hub) setTypingStatus(userID, chatPartnerID uuid.UUID, isTyping bool) {
-	h.typingMu.Lock()
-	defer h.typingMu.Unlock()
-
-	if h.typingStatus[userID] == nil {
-		h.typingStatus[userID] = make(map[uuid.UUID]time.Time)
-	}
-
-	if isTyping {
-		h.typingStatus[userID][chatPartnerID] = time.Now()
-	} else {
-		delete(h.typingStatus[userID], chatPartnerID)
-		if len(h.typingStatus[userID]) == 0 {
-			delete(h.typingStatus, userID)
 		}
 	}
 }
@@ -381,7 +197,7 @@ func (h *Hub) clearUserTypingStatus(userID uuid.UUID) {
 				continue
 			}
 
-			h.sendToUser(chatPartnerID, message)
+			h.sendToHTMXUser(chatPartnerID, message)
 		}
 	}
 
@@ -411,7 +227,7 @@ func (h *Hub) cleanupTypingIndicators() {
 
 					message, err := NewWebSocketMessage(MessageTypeTypingStop, typingData)
 					if err == nil {
-						h.sendToUser(chatPartnerID, message)
+						h.sendToHTMXUser(chatPartnerID, message)
 					}
 				}
 			}
@@ -429,7 +245,7 @@ func (h *Hub) cleanupTypingIndicators() {
 func (h *Hub) updateUserPresence(userID uuid.UUID, isOnline bool) {
 	// This would typically update a user_presence table
 	// For now, we'll just log it since we haven't extended the database yet
-	log.Printf("User %d presence updated: online=%v", userID, isOnline)
+	log.Printf("User %s presence updated: online=%v", userID.String(), isOnline)
 }
 
 // BroadcastNewMessage broadcasts a new message to the recipient if they're online
@@ -449,7 +265,7 @@ func (h *Hub) BroadcastNewMessage(msg *models.Message) {
 		return
 	}
 
-	h.sendToUser(msg.ReceiverID, message)
+	h.sendToHTMXUser(msg.ReceiverID, message)
 }
 
 // BroadcastFileUpload broadcasts a file upload notification
@@ -468,37 +284,29 @@ func (h *Hub) BroadcastFileUpload(file *models.File) {
 		return
 	}
 
-	h.sendToUser(file.ReceiverID, message)
+	h.sendToHTMXUser(file.ReceiverID, message)
 }
 
-// GetOnlineUsers returns a list of currently online users
+// GetOnlineUsers returns a list of currently online HTMX users
 func (h *Hub) GetOnlineUsers() []uuid.UUID {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
 	var onlineUsers []uuid.UUID
-	for userID := range h.userPresence {
+	for userID := range h.htmxUserPresence {
 		onlineUsers = append(onlineUsers, userID)
 	}
 
 	return onlineUsers
 }
 
-// IsUserOnline checks if a user is currently online
+// IsUserOnline checks if a user is currently online via HTMX
 func (h *Hub) IsUserOnline(userID uuid.UUID) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	_, online := h.userPresence[userID]
+	_, online := h.htmxUserPresence[userID]
 	return online
-}
-
-// GetClient returns a regular client by user ID
-func (h *Hub) GetClient(userID uuid.UUID) *Client {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	return h.userPresence[userID]
 }
 
 // GetHTMXClient returns an HTMX client by user ID
