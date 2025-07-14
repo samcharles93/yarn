@@ -1,0 +1,40 @@
+package components
+
+import (
+	"fmt"
+	"github.com/google/uuid"
+	"github.com/samcharles93/yarn/internal/models"
+)
+
+templ UserList(users []*models.User, currentUserID uuid.UUID) {
+	<div class="user-list-section" id="user-list-section">
+		<h2>Users</h2>
+		<ul class="user-list" id="user-list" hx-get="/api/users" hx-trigger="every 10s" hx-swap="innerHTML">
+			for _, user := range users {
+				if user.ID != currentUserID {
+					@UserItem(user, false)
+				}
+			}
+		</ul>
+	</div>
+}
+
+templ UserItem(user *models.User, isOnline bool) {
+	<li class="user-item" 
+		hx-get={ fmt.Sprintf("/api/chat/%s", user.ID.String()) }
+		hx-target="#chat-area"
+		hx-swap="outerHTML"
+		data-user-id={ user.ID.String() }
+		data-username={ user.Username }>
+		<span class="username">{ user.Username }</span>
+		<span class={ "user-status", templ.KV("online", isOnline), templ.KV("offline", !isOnline) }></span>
+	</li>
+}
+
+templ UserListUpdate(users []*models.User, currentUserID uuid.UUID) {
+	for _, user := range users {
+		if user.ID != currentUserID {
+			@UserItem(user, false)
+		}
+	}
+}

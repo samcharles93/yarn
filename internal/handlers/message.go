@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/samcharles93/yarn/internal/models"
 )
 
@@ -20,10 +20,10 @@ func (h *Handler) SendMessageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		SenderID         int    `json:"senderId"`
-		ReceiverID       int    `json:"receiverId"`
-		EncryptedContent []byte `json:"encryptedContent"` // Base64 decoded on client, sent as raw bytes
-		IV               []byte `json:"iv"`               // Base64 decoded on client, sent as raw bytes
+		SenderID         uuid.UUID `json:"senderId"`
+		ReceiverID       uuid.UUID `json:"receiverId"`
+		EncryptedContent []byte    `json:"encryptedContent"` // Base64 decoded on client, sent as raw bytes
+		IV               []byte    `json:"iv"`               // Base64 decoded on client, sent as raw bytes
 	}
 
 	// Decode the JSON request body.
@@ -70,12 +70,12 @@ func (h *Handler) GetMessagesHandler(w http.ResponseWriter, r *http.Request) {
 	senderIDStr := r.URL.Query().Get("senderId")
 	receiverIDStr := r.URL.Query().Get("receiverId")
 
-	senderID, err := strconv.Atoi(senderIDStr)
+	senderID, err := uuid.Parse(senderIDStr)
 	if err != nil {
 		http.Error(w, "Invalid senderId", http.StatusBadRequest)
 		return
 	}
-	receiverID, err := strconv.Atoi(receiverIDStr)
+	receiverID, err := uuid.Parse(receiverIDStr)
 	if err != nil {
 		http.Error(w, "Invalid receiverId", http.StatusBadRequest)
 		return

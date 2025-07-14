@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -46,7 +47,7 @@ type Client struct {
 	hub *Hub
 
 	// User ID associated with this client
-	userID int
+	userID uuid.UUID
 
 	// Username associated with this client
 	username string
@@ -59,7 +60,7 @@ type Client struct {
 }
 
 // NewClient creates a new websocket client
-func NewClient(hub *Hub, conn *websocket.Conn, userID int, username string) *Client {
+func NewClient(hub *Hub, conn *websocket.Conn, userID uuid.UUID, username string) *Client {
 	return &Client{
 		conn:          conn,
 		send:          make(chan []byte, 256),
@@ -71,7 +72,7 @@ func NewClient(hub *Hub, conn *websocket.Conn, userID int, username string) *Cli
 }
 
 // GetUserID returns the user ID for this client
-func (c *Client) GetUserID() int {
+func (c *Client) GetUserID() uuid.UUID {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.userID
@@ -207,7 +208,7 @@ func (c *Client) sendError(errorMsg string) {
 }
 
 // ServeWS handles websocket requests from the peer
-func ServeWS(hub *Hub, w http.ResponseWriter, r *http.Request, userID int, username string) {
+func ServeWS(hub *Hub, w http.ResponseWriter, r *http.Request, userID uuid.UUID, username string) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)

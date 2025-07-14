@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 
+	"github.com/google/uuid"
 	"github.com/samcharles93/yarn/internal/models"
 )
 
@@ -34,14 +34,14 @@ func (h *Handler) UploadFileHandler(w http.ResponseWriter, r *http.Request) {
 	originalFilename := r.FormValue("originalFilename")
 	ivBase64 := r.FormValue("iv") // IV sent as base64 string
 
-	senderID, err := strconv.Atoi(senderIDStr)
+	senderID, err := uuid.Parse(senderIDStr)
 	if err != nil {
-		http.Error(w, "Invalid senderId", http.StatusBadRequest)
+		http.Error(w, "Invalid senderId format", http.StatusBadRequest)
 		return
 	}
-	receiverID, err := strconv.Atoi(receiverIDStr)
+	receiverID, err := uuid.Parse(receiverIDStr)
 	if err != nil {
-		http.Error(w, "Invalid receiverId", http.StatusBadRequest)
+		http.Error(w, "Invalid receiverId format", http.StatusBadRequest)
 		return
 	}
 
@@ -123,7 +123,7 @@ func (h *Handler) DownloadFileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fileIDStr := r.URL.Query().Get("fileId")
-	fileID, err := strconv.Atoi(fileIDStr)
+	fileID, err := uuid.Parse(fileIDStr)
 	if err != nil {
 		http.Error(w, "Invalid fileId", http.StatusBadRequest)
 		return

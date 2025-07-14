@@ -3,6 +3,8 @@ package websocket
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // MessageType represents different types of websocket messages
@@ -25,41 +27,41 @@ type WebSocketMessage struct {
 	Type      MessageType     `json:"type"`
 	Data      json.RawMessage `json:"data"`
 	Timestamp time.Time       `json:"timestamp"`
-	From      int             `json:"from,omitempty"`
-	To        int             `json:"to,omitempty"`
+	From      uuid.UUID       `json:"from,omitempty"`
+	To        uuid.UUID       `json:"to,omitempty"`
 }
 
 // ChatMessageData represents the data for a chat message
 type ChatMessageData struct {
-	ID               int    `json:"id"`
-	SenderID         int    `json:"senderId"`
-	ReceiverID       int    `json:"receiverId"`
-	EncryptedContent string `json:"encryptedContent"`
-	IV               string `json:"iv"`
-	Timestamp        string `json:"timestamp"`
+	ID               uuid.UUID `json:"id"`
+	SenderID         uuid.UUID `json:"senderId"`
+	ReceiverID       uuid.UUID `json:"receiverId"`
+	EncryptedContent string    `json:"encryptedContent"`
+	IV               string    `json:"iv"`
+	Timestamp        string    `json:"timestamp"`
 }
 
 // TypingData represents typing indicator data
 type TypingData struct {
-	UserID        int    `json:"userId"`
-	Username      string `json:"username"`
-	ChatPartnerID int    `json:"chatPartnerId"`
+	UserID        uuid.UUID `json:"userId"`
+	Username      string    `json:"username"`
+	ChatPartnerID uuid.UUID `json:"chatPartnerId"`
 }
 
 // UserPresenceData represents user presence data
 type UserPresenceData struct {
-	UserID   int    `json:"userId"`
-	Username string `json:"username"`
-	IsOnline bool   `json:"isOnline"`
+	UserID   uuid.UUID `json:"userId"`
+	Username string    `json:"username"`
+	IsOnline bool      `json:"isOnline"`
 }
 
 // FileUploadData represents file upload notification data
 type FileUploadData struct {
-	FileID           int    `json:"fileId"`
-	SenderID         int    `json:"senderId"`
-	ReceiverID       int    `json:"receiverId"`
-	OriginalFilename string `json:"originalFilename"`
-	Timestamp        string `json:"timestamp"`
+	FileID           uuid.UUID `json:"fileId"`
+	SenderID         uuid.UUID `json:"senderId"`
+	ReceiverID       uuid.UUID `json:"receiverId"`
+	OriginalFilename string    `json:"originalFilename"`
+	Timestamp        string    `json:"timestamp"`
 }
 
 // ErrorData represents error message data
@@ -74,7 +76,7 @@ type HeartbeatData struct {
 }
 
 // NewWebSocketMessage creates a new websocket message
-func NewWebSocketMessage(msgType MessageType, data interface{}) (*WebSocketMessage, error) {
+func NewWebSocketMessage(msgType MessageType, data any) (*WebSocketMessage, error) {
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
 		return nil, err
@@ -88,6 +90,6 @@ func NewWebSocketMessage(msgType MessageType, data interface{}) (*WebSocketMessa
 }
 
 // ParseData parses the message data into the specified type
-func (m *WebSocketMessage) ParseData(v interface{}) error {
+func (m *WebSocketMessage) ParseData(v any) error {
 	return json.Unmarshal(m.Data, v)
 }

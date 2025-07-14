@@ -1,0 +1,77 @@
+package components
+
+import "github.com/samcharles93/yarn/internal/models"
+
+templ AuthSection() {
+	<div class="auth-section" id="auth-section">
+		<h2>Join Yarn</h2>
+		<div class="form-group">
+			<input type="text" id="username" placeholder="Username" class="input-field" required/>
+		</div>
+		<div class="form-group">
+			<input type="text" id="bio" placeholder="Bio (optional)" class="input-field"/>
+		</div>
+		<div class="form-group">
+			<button 
+				hx-post="/api/register" 
+				hx-target="#auth-message" 
+				hx-swap="outerHTML"
+				hx-include="#username, #bio"
+				class="btn btn-primary">
+				Register
+			</button>
+			<button 
+				hx-post="/api/login" 
+				hx-target="#auth-message" 
+				hx-swap="outerHTML"
+				hx-include="#username"
+				class="btn btn-secondary">
+				Login
+			</button>
+		</div>
+		<div id="auth-message" class="message-box"></div>
+	</div>
+}
+
+templ UserInfo(user *models.User) {
+	<div class="user-info" id="user-info">
+		<p>Welcome, <span id="current-username">{ user.Username }</span>!</p>
+		<button 
+			hx-post="/api/logout" 
+			hx-target="body" 
+			hx-swap="outerHTML"
+			class="btn btn-secondary">
+			Logout
+		</button>
+	</div>
+}
+
+templ AuthMessage(message string, msgType string) {
+	<div class={ "message-box", msgType }>
+		{ message }
+	</div>
+}
+
+templ AuthSuccess(user *models.User) {
+	<div class="message-box success">
+		Registration successful! Welcome, { user.Username }!
+	</div>
+	<script>
+		// Trigger page reload or redirect after successful auth
+		setTimeout(() => {
+			window.location.reload();
+		}, 1000);
+	</script>
+}
+
+templ LoginSuccess(user *models.User) {
+	<div class="message-box success">
+		Login successful! Welcome back, { user.Username }!
+	</div>
+	<script>
+		// Trigger page reload or redirect after successful auth
+		setTimeout(() => {
+			window.location.reload();
+		}, 1000);
+	</script>
+}

@@ -9,9 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/samcharles93/yarn/internal/models"
 
-	_ "modernc.org/sqlite" // SQLite driver import
+	_ "modernc.org/sqlite"
 )
 
 // DB represents the database connection.
@@ -56,7 +57,7 @@ func createTables(db *sql.DB) error {
 	// PublicKey is stored as BLOB (byte array).
 	createUsersTableSQL := `
 	CREATE TABLE IF NOT EXISTS users (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		id TEXT PRIMARY KEY,
 		username TEXT NOT NULL UNIQUE,
 		bio TEXT,
 		public_key BLOB NOT NULL,
@@ -67,9 +68,9 @@ func createTables(db *sql.DB) error {
 	// Content and IV are stored as BLOBs.
 	createMessagesTableSQL := `
 	CREATE TABLE IF NOT EXISTS messages (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		sender_id INTEGER NOT NULL,
-		receiver_id INTEGER NOT NULL,
+		id TEXT PRIMARY KEY,
+		sender_id TEXT NOT NULL,
+		receiver_id TEXT NOT NULL,
 		content BLOB NOT NULL,
 		iv BLOB NOT NULL,
 		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -81,9 +82,9 @@ func createTables(db *sql.DB) error {
 	// FilePath and IV are stored as BLOBs.
 	createFilesTableSQL := `
 	CREATE TABLE IF NOT EXISTS files (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		sender_id INTEGER NOT NULL,
-		receiver_id INTEGER NOT NULL,
+		id TEXT PRIMARY KEY,
+		sender_id TEXT NOT NULL,
+		receiver_id TEXT NOT NULL,
 		original_filename TEXT NOT NULL,
 		file_path TEXT NOT NULL,
 		iv BLOB NOT NULL,
@@ -95,7 +96,7 @@ func createTables(db *sql.DB) error {
 	// SQL statement to create the metrics table (for non-identifiable metrics).
 	createMetricsTableSQL := `
 	CREATE TABLE IF NOT EXISTS metrics (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		id TEXT PRIMARY KEY,
 		event_type TEXT NOT NULL,
 		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`
@@ -126,23 +127,21 @@ func (d *DB) AddUser(user *models.User) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	stmt, err := d.Prepare("INSERT INTO users(username, bio, public_key) VALUES(?, ?, ?)")
+	// Generate UUID for the user
+	user.ID = uuid.New()
+
+	stmt, err := d.Prepare("INSERT INTO users(id, username, bio, public_key) VALUES(?, ?, ?, ?)")
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement for adding user: %w", err)
 	}
 	defer stmt.Close()
 
-	res, err := stmt.Exec(user.Username, user.Bio, user.PublicKey)
+	_, err = stmt.Exec(user.ID.String(), user.Username, user.Bio, user.PublicKey)
 	if err != nil {
 		return fmt.Errorf("failed to execute statement for adding user: %w", err)
 	}
 
-	id, err := res.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("failed to get last insert ID for user: %w", err)
-	}
-	user.ID = int(id)
-	log.Printf("Added user: %s with ID: %d", user.Username, user.ID)
+	log.Printf("Added user: %s with ID: %s", user.Username, user.ID.String())
 	return nil
 }
 
@@ -153,15 +152,23 @@ func (d *DB) GetUserByUsername(username string) (*models.User, error) {
 
 	row := d.QueryRow("SELECT id, username, bio, public_key, created_at FROM users WHERE username = ?", username)
 	user := &models.User{}
-	var createdAtStr string // Use string to scan DATETIME
-	err := row.Scan(&user.ID, &user.Username, &user.Bio, &user.PublicKey, &createdAtStr)
+	var createdAtStr string
+	var idStr string
+	err := row.Scan(&idStr, &user.Username, &user.Bio, &user.PublicKey, &createdAtStr)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, nil // User not found
+			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to scan user by username: %w", err)
 	}
-	user.CreatedAt, err = time.Parse(time.RFC3339, createdAtStr) // Use RFC3339 for parsing
+
+	// Parse UUID from string
+	user.ID, err = uuid.Parse(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse user ID: %w", err)
+	}
+
+	user.CreatedAt, err = time.Parse(time.RFC3339, createdAtStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse created_at for user: %w", err)
 	}
@@ -169,21 +176,29 @@ func (d *DB) GetUserByUsername(username string) (*models.User, error) {
 }
 
 // GetUserByID retrieves a user by their ID.
-func (d *DB) GetUserByID(id int) (*models.User, error) {
+func (d *DB) GetUserByID(id uuid.UUID) (*models.User, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	row := d.QueryRow("SELECT id, username, bio, public_key, created_at FROM users WHERE id = ?", id)
+	row := d.QueryRow("SELECT id, username, bio, public_key, created_at FROM users WHERE id = ?", id.String())
 	user := &models.User{}
 	var createdAtStr string
-	err := row.Scan(&user.ID, &user.Username, &user.Bio, &user.PublicKey, &createdAtStr)
+	var idStr string
+	err := row.Scan(&idStr, &user.Username, &user.Bio, &user.PublicKey, &createdAtStr)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, nil // User not found
+			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to scan user by ID: %w", err)
 	}
-	user.CreatedAt, err = time.Parse(time.RFC3339, createdAtStr) // Use RFC3339 for parsing
+
+	// Parse UUID from string
+	user.ID, err = uuid.Parse(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse user ID: %w", err)
+	}
+
+	user.CreatedAt, err = time.Parse(time.RFC3339, createdAtStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse created_at for user: %w", err)
 	}
@@ -191,7 +206,7 @@ func (d *DB) GetUserByID(id int) (*models.User, error) {
 }
 
 // GetAllUsers retrieves all users from the database.
-func (d *DB) GetAllUsers() ([]models.User, error) {
+func (d *DB) GetAllUsers() ([]*models.User, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -201,20 +216,29 @@ func (d *DB) GetAllUsers() ([]models.User, error) {
 	}
 	defer rows.Close()
 
-	var users []models.User
+	var users []*models.User
 	for rows.Next() {
 		user := models.User{}
 		var createdAtStr string
-		if err := rows.Scan(&user.ID, &user.Username, &user.Bio, &user.PublicKey, &createdAtStr); err != nil {
+		var idStr string
+		if err := rows.Scan(&idStr, &user.Username, &user.Bio, &user.PublicKey, &createdAtStr); err != nil {
 			log.Printf("Error scanning user row: %v", err)
 			continue
 		}
-		user.CreatedAt, err = time.Parse(time.RFC3339, createdAtStr) // Use RFC3339 for parsing
+
+		// Parse UUID from string
+		user.ID, err = uuid.Parse(idStr)
+		if err != nil {
+			log.Printf("Error parsing user ID: %v", err)
+			continue
+		}
+
+		user.CreatedAt, err = time.Parse(time.RFC3339, createdAtStr)
 		if err != nil {
 			log.Printf("Error parsing created_at for user %s: %v", user.Username, err)
 			continue
 		}
-		users = append(users, user)
+		users = append(users, &user)
 	}
 
 	if err = rows.Err(); err != nil {
@@ -243,14 +267,14 @@ func (d *DB) AddMessage(msg *models.Message) error {
 	if err != nil {
 		return fmt.Errorf("failed to get last insert ID for message: %w", err)
 	}
-	msg.ID = int(id)
+	msg.ID = uuid.MustParse(fmt.Sprintf("%d", id))
 	log.Printf("Added message from %d to %d (ID: %d)", msg.SenderID, msg.ReceiverID, msg.ID)
 	return nil
 }
 
 // GetMessagesBetweenUsers retrieves encrypted messages exchanged between two users.
 // Messages are ordered by timestamp.
-func (d *DB) GetMessagesBetweenUsers(user1ID, user2ID int) ([]models.Message, error) {
+func (d *DB) GetMessagesBetweenUsers(user1ID, user2ID uuid.UUID) ([]*models.Message, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -266,7 +290,7 @@ func (d *DB) GetMessagesBetweenUsers(user1ID, user2ID int) ([]models.Message, er
 	}
 	defer rows.Close()
 
-	var messages []models.Message
+	var messages []*models.Message
 	for rows.Next() {
 		msg := models.Message{}
 		var timestampStr string
@@ -274,12 +298,12 @@ func (d *DB) GetMessagesBetweenUsers(user1ID, user2ID int) ([]models.Message, er
 			log.Printf("Error scanning message row: %v", err)
 			continue
 		}
-		msg.Timestamp, err = time.Parse(time.RFC3339, timestampStr) // Use RFC3339 for parsing
+		msg.Timestamp, err = time.Parse(time.RFC3339, timestampStr)
 		if err != nil {
 			log.Printf("Error parsing timestamp for message %d: %v", msg.ID, err)
 			continue
 		}
-		messages = append(messages, msg)
+		messages = append(messages, &msg)
 	}
 
 	if err = rows.Err(); err != nil {
@@ -308,13 +332,13 @@ func (d *DB) AddFile(file *models.File) error {
 	if err != nil {
 		return fmt.Errorf("failed to get last insert ID for file: %w", err)
 	}
-	file.ID = int(id)
+	file.ID = uuid.MustParse(fmt.Sprintf("%d", id))
 	log.Printf("Added file: %s from %d to %d (ID: %d)", file.OriginalFilename, file.SenderID, file.ReceiverID, file.ID)
 	return nil
 }
 
 // GetFileMetadata retrieves file metadata by file ID.
-func (d *DB) GetFileMetadata(fileID int) (*models.File, error) {
+func (d *DB) GetFileMetadata(fileID uuid.UUID) (*models.File, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -324,11 +348,11 @@ func (d *DB) GetFileMetadata(fileID int) (*models.File, error) {
 	err := row.Scan(&file.ID, &file.SenderID, &file.ReceiverID, &file.OriginalFilename, &file.FilePath, &file.IV, &timestampStr)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, nil // File not found
+			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to scan file metadata: %w", err)
 	}
-	file.Timestamp, err = time.Parse(time.RFC3339, timestampStr) // Use RFC3339 for parsing
+	file.Timestamp, err = time.Parse(time.RFC3339, timestampStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse timestamp for file: %w", err)
 	}
@@ -340,16 +364,19 @@ func (d *DB) AddMetric(eventType string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	stmt, err := d.Prepare("INSERT INTO metrics(event_type) VALUES(?)")
+	// Generate UUID for the metric
+	metricID := uuid.New()
+
+	stmt, err := d.Prepare("INSERT INTO metrics(id, event_type) VALUES(?, ?)")
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement for adding metric: %w", err)
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(eventType)
+	_, err = stmt.Exec(metricID.String(), eventType)
 	if err != nil {
 		return fmt.Errorf("failed to execute statement for adding metric: %w", err)
 	}
-	log.Printf("Logged metric: %s", eventType)
+	log.Printf("Logged metric: %s with ID: %s", eventType, metricID.String())
 	return nil
 }

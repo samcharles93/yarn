@@ -1,0 +1,51 @@
+package components
+
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ title } - Yarn</title>
+			<link rel="stylesheet" href="/UI/static/css/modern.css"/>
+			<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet"/>
+			<script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.6/dist/htmx.min.js"></script>
+			<script src="https://cdn.jsdelivr.net/npm/htmx-ext-ws@2.0.2"></script>
+		</head>
+		<body hx-ext="ws">
+			<div class="container">
+				{ children... }
+			</div>
+			<!-- Global Modal -->
+			<div id="modal" class="modal">
+				<div class="modal-content">
+					<p id="modal-message"></p>
+					<button class="btn btn-primary" onclick="document.getElementById('modal').classList.remove('show')">OK</button>
+				</div>
+			</div>
+			<script>
+			// Global modal function
+			function showModal(message) {
+				document.getElementById('modal-message').textContent = message;
+				document.getElementById('modal').classList.add('show');
+			}
+
+			// Auto-hide success messages
+			document.addEventListener('htmx:afterSwap', function(event) {
+				if (event.detail.target.classList.contains('message-box') && event.detail.target.classList.contains('success')) {
+					setTimeout(() => {
+						event.detail.target.classList.remove('show');
+					}, 3000);
+				}
+			});
+			
+			// Show message boxes
+			document.addEventListener('htmx:afterSwap', function(event) {
+				if (event.detail.target.classList.contains('message-box')) {
+					event.detail.target.classList.add('show');
+				}
+			});
+		</script>
+		</body>
+	</html>
+}

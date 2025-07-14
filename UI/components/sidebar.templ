@@ -1,0 +1,25 @@
+package components
+
+import "github.com/samcharles93/yarn/internal/models"
+
+templ Sidebar(user *models.User, users []*models.User) {
+	<aside class="sidebar">
+		<h1 class="app-title">Yarn</h1>
+		
+		if user != nil {
+			@UserInfo(user)
+			@UserList(users, user.ID)
+		} else {
+			@AuthSection()
+		}
+	</aside>
+}
+
+templ MainPage(user *models.User, users []*models.User) {
+	@Layout("Encrypted Chat") {
+		@Sidebar(user, users)
+		if user != nil {
+			@EmptyChat()
+		}
+	}
+}

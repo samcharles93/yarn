@@ -3,8 +3,8 @@ package handlers
 import (
 	"log"
 	"net/http"
-	"strconv"
 
+	"github.com/google/uuid"
 	"github.com/samcharles93/yarn/internal/websocket"
 )
 
@@ -19,7 +19,7 @@ func (h *Handler) WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := strconv.Atoi(userIDStr)
+	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
 		http.Error(w, "Invalid userId", http.StatusBadRequest)
 		return

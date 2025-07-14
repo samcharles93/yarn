@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/samcharles93/yarn/internal/database"
 	"github.com/samcharles93/yarn/internal/models"
 )
@@ -15,6 +16,9 @@ import (
 type Hub struct {
 	// Registered clients
 	clients map[*Client]bool
+
+	// Registered HTMX clients
+	htmxClients map[*HTMXClient]bool
 
 	// Inbound messages from the clients
 	broadcast chan []byte
@@ -25,30 +29,41 @@ type Hub struct {
 	// Unregister requests from clients
 	unregister chan *Client
 
+	// Register requests from HTMX clients
+	RegisterHTMX chan *HTMXClient
+
+	// Unregister requests from HTMX clients
+	UnregisterHTMX chan *HTMXClient
+
 	// Database connection
 	db *database.DB
 
 	// Mutex to protect concurrent access to clients map
 	mu sync.RWMutex
 
-	// User presence tracking
-	userPresence map[int]*Client // userID -> client
+	// User presence tracking (both client types)
+	userPresence     map[uuid.UUID]*Client     // userID -> client
+	htmxUserPresence map[uuid.UUID]*HTMXClient // userID -> htmx client
 
 	// Typing status tracking
-	typingStatus map[int]map[int]time.Time // userID -> chatPartnerID -> lastTypingTime
+	typingStatus map[uuid.UUID]map[uuid.UUID]time.Time // userID -> chatPartnerID -> lastTypingTime
 	typingMu     sync.RWMutex
 }
 
 // NewHub creates a new websocket hub
 func NewHub(db *database.DB) *Hub {
 	return &Hub{
-		clients:      make(map[*Client]bool),
-		broadcast:    make(chan []byte),
-		register:     make(chan *Client),
-		unregister:   make(chan *Client),
-		db:           db,
-		userPresence: make(map[int]*Client),
-		typingStatus: make(map[int]map[int]time.Time),
+		clients:          make(map[*Client]bool),
+		htmxClients:      make(map[*HTMXClient]bool),
+		broadcast:        make(chan []byte),
+		register:         make(chan *Client),
+		unregister:       make(chan *Client),
+		RegisterHTMX:     make(chan *HTMXClient),
+		UnregisterHTMX:   make(chan *HTMXClient),
+		db:               db,
+		userPresence:     make(map[uuid.UUID]*Client),
+		htmxUserPresence: make(map[uuid.UUID]*HTMXClient),
+		typingStatus:     make(map[uuid.UUID]map[uuid.UUID]time.Time),
 	}
 }
 
@@ -64,6 +79,12 @@ func (h *Hub) Run() {
 
 		case client := <-h.unregister:
 			h.unregisterClient(client)
+
+		case client := <-h.RegisterHTMX:
+			h.registerHTMXClient(client)
+
+		case client := <-h.UnregisterHTMX:
+			h.unregisterHTMXClient(client)
 
 		case message := <-h.broadcast:
 			h.broadcastMessage(message)
@@ -99,6 +120,46 @@ func (h *Hub) unregisterClient(client *Client) {
 		close(client.send)
 
 		log.Printf("Client unregistered: User %d (%s)", client.GetUserID(), client.GetUsername())
+
+		// Notify other clients that this user is offline
+		h.broadcastUserPresence(client.GetUserID(), client.GetUsername(), false)
+
+		// Update user presence in database
+		h.updateUserPresence(client.GetUserID(), false)
+
+		// Clear typing status for this user
+		h.clearUserTypingStatus(client.GetUserID())
+	}
+}
+
+// registerHTMXClient registers a new HTMX client
+func (h *Hub) registerHTMXClient(client *HTMXClient) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.htmxClients[client] = true
+	h.htmxUserPresence[client.GetUserID()] = client
+
+	log.Printf("HTMX Client registered: User %s (%s)", client.GetUserID().String(), client.GetUsername())
+
+	// Notify other clients that this user is online
+	h.broadcastUserPresence(client.GetUserID(), client.GetUsername(), true)
+
+	// Update user presence in database
+	h.updateUserPresence(client.GetUserID(), true)
+}
+
+// unregisterHTMXClient unregisters an HTMX client
+func (h *Hub) unregisterHTMXClient(client *HTMXClient) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if _, ok := h.htmxClients[client]; ok {
+		delete(h.htmxClients, client)
+		delete(h.htmxUserPresence, client.GetUserID())
+		close(client.send)
+
+		log.Printf("HTMX Client unregistered: User %s (%s)", client.GetUserID().String(), client.GetUsername())
 
 		// Notify other clients that this user is offline
 		h.broadcastUserPresence(client.GetUserID(), client.GetUsername(), false)
@@ -234,7 +295,7 @@ func (h *Hub) handleHeartbeat(client *Client, message *WebSocketMessage) {
 }
 
 // sendToUser sends a message to a specific user if they're online
-func (h *Hub) sendToUser(userID int, message *WebSocketMessage) {
+func (h *Hub) sendToUser(userID uuid.UUID, message *WebSocketMessage) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -244,7 +305,7 @@ func (h *Hub) sendToUser(userID int, message *WebSocketMessage) {
 }
 
 // broadcastUserPresence broadcasts user presence changes to all clients
-func (h *Hub) broadcastUserPresence(userID int, username string, isOnline bool) {
+func (h *Hub) broadcastUserPresence(userID uuid.UUID, username string, isOnline bool) {
 	presenceData := UserPresenceData{
 		UserID:   userID,
 		Username: username,
@@ -284,12 +345,12 @@ func (h *Hub) broadcastUserPresence(userID int, username string, isOnline bool) 
 }
 
 // setTypingStatus sets the typing status for a user
-func (h *Hub) setTypingStatus(userID, chatPartnerID int, isTyping bool) {
+func (h *Hub) setTypingStatus(userID, chatPartnerID uuid.UUID, isTyping bool) {
 	h.typingMu.Lock()
 	defer h.typingMu.Unlock()
 
 	if h.typingStatus[userID] == nil {
-		h.typingStatus[userID] = make(map[int]time.Time)
+		h.typingStatus[userID] = make(map[uuid.UUID]time.Time)
 	}
 
 	if isTyping {
@@ -303,7 +364,7 @@ func (h *Hub) setTypingStatus(userID, chatPartnerID int, isTyping bool) {
 }
 
 // clearUserTypingStatus clears all typing status for a user
-func (h *Hub) clearUserTypingStatus(userID int) {
+func (h *Hub) clearUserTypingStatus(userID uuid.UUID) {
 	h.typingMu.Lock()
 	defer h.typingMu.Unlock()
 
@@ -365,7 +426,7 @@ func (h *Hub) cleanupTypingIndicators() {
 }
 
 // updateUserPresence updates user presence in the database
-func (h *Hub) updateUserPresence(userID int, isOnline bool) {
+func (h *Hub) updateUserPresence(userID uuid.UUID, isOnline bool) {
 	// This would typically update a user_presence table
 	// For now, we'll just log it since we haven't extended the database yet
 	log.Printf("User %d presence updated: online=%v", userID, isOnline)
@@ -411,11 +472,11 @@ func (h *Hub) BroadcastFileUpload(file *models.File) {
 }
 
 // GetOnlineUsers returns a list of currently online users
-func (h *Hub) GetOnlineUsers() []int {
+func (h *Hub) GetOnlineUsers() []uuid.UUID {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	var onlineUsers []int
+	var onlineUsers []uuid.UUID
 	for userID := range h.userPresence {
 		onlineUsers = append(onlineUsers, userID)
 	}
@@ -424,10 +485,26 @@ func (h *Hub) GetOnlineUsers() []int {
 }
 
 // IsUserOnline checks if a user is currently online
-func (h *Hub) IsUserOnline(userID int) bool {
+func (h *Hub) IsUserOnline(userID uuid.UUID) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
 	_, online := h.userPresence[userID]
 	return online
+}
+
+// GetClient returns a regular client by user ID
+func (h *Hub) GetClient(userID uuid.UUID) *Client {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	return h.userPresence[userID]
+}
+
+// GetHTMXClient returns an HTMX client by user ID
+func (h *Hub) GetHTMXClient(userID uuid.UUID) *HTMXClient {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	return h.htmxUserPresence[userID]
 }

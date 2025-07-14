@@ -1,0 +1,98 @@
+package components
+
+import (
+	"fmt"
+	"github.com/google/uuid"
+	"github.com/samcharles93/yarn/internal/models"
+)
+
+templ ChatArea(partner *models.User, messages []*models.Message, currentUser *models.User) {
+	<div class="chat-area" id="chat-area" hx-ext="ws" ws-connect={ fmt.Sprintf("/ws/htmx?userId=%s&username=%s", currentUser.ID.String(), currentUser.Username) }>
+		if partner != nil {
+			@ChatHeader(partner)
+			@MessagesContainer(messages, currentUser.ID, partner.Username)
+			@ChatInput(partner.ID)
+		} else {
+			@EmptyChat()
+		}
+	</div>
+}
+
+templ EmptyChat() {
+	<div class="chat-area" id="chat-area">
+		<div class="chat-header">
+			<h2>Select a user to chat with</h2>
+		</div>
+		<div class="messages-container">
+			<div class="text-center text-muted">
+				<p>Choose a user from the sidebar to start chatting</p>
+			</div>
+		</div>
+	</div>
+}
+
+templ ChatHeader(partner *models.User) {
+	<div class="chat-header">
+		<h2>Chatting with { partner.Username }</h2>
+	</div>
+}
+
+templ MessagesContainer(messages []*models.Message, currentUserID uuid.UUID, partnerUsername string) {
+	<div class="messages-container" id="messages-container">
+		<div id="messages" hx-swap-oob="true">
+			for _, message := range messages {
+				@MessageBubble(message, currentUserID, partnerUsername)
+			}
+		</div>
+		<div id="typing-indicator"></div>
+	</div>
+}
+
+templ MessageBubble(message *models.Message, currentUserID uuid.UUID, partnerUsername string) {
+	<div class={ "message", templ.KV("sent", message.SenderID == currentUserID), templ.KV("received", message.SenderID != currentUserID) }>
+		<div class="message-bubble">
+			<div class="message-content">
+				// Note: In real implementation, you'd decrypt the message content here
+				// For now, showing placeholder
+				if message.SenderID == currentUserID {
+					[Your encrypted message]
+				} else {
+					[{ partnerUsername }'s encrypted message]
+				}
+			</div>
+			<div class="message-timestamp">
+				{ message.Timestamp.Format("3:04 PM") }
+			</div>
+		</div>
+	</div>
+}
+
+templ ChatInput(partnerID uuid.UUID) {
+	<div class="chat-input-area">
+		<form ws-send hx-trigger="submit" hx-swap="none">
+			<input type="hidden" name="type" value="chat"/>
+			<input type="hidden" name="receiverId" value={ partnerID.String() }/>
+			<textarea 
+				name="message" 
+				class="message-input" 
+				placeholder="Type your encrypted message..."
+				rows="1"
+				required></textarea>
+			<button type="submit" class="btn btn-primary">Send</button>
+		</form>
+		<input type="file" class="hidden" id="file-input"/>
+		<button class="btn btn-icon" onclick="document.getElementById('file-input').click()">📎</button>
+	</div>
+}
+
+templ TypingIndicator(username string) {
+	<div class="typing-indicator" id="typing-indicator">
+		{ username } is typing...
+	</div>
+}
+
+templ NewMessage(message *models.Message, currentUserID uuid.UUID, partnerUsername string) {
+	<div hx-swap-oob="beforeend:#messages">
+		@MessageBubble(message, currentUserID, partnerUsername)
+	</div>
+}

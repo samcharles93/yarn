@@ -1,0 +1,88 @@
+package components
+
+import (
+	"fmt"
+	"github.com/google/uuid"
+	"github.com/samcharles93/yarn/internal/models"
+)
+
+// WebSocketChatArea renders the chat area with WebSocket connectivity
+templ WebSocketChatArea(currentUser *models.User, partner *models.User, messages []*models.Message) {
+	<div class="chat-area" 
+		id="chat-area" 
+		hx-ext="ws" 
+		ws-connect={ fmt.Sprintf("/ws/new?userId=%d", currentUser.ID) }>
+		
+		if partner != nil {
+			@ChatHeader(partner)
+			
+			<!-- Messages container with WebSocket updates -->
+			<div class="messages-container" id="messages-container">
+				<div id="messages">
+					for _, message := range messages {
+						@MessageBubble(message, currentUser.ID, partner.Username)
+					}
+				</div>
+				<div id="typing-indicator"></div>
+			</div>
+			
+			<!-- Chat input form that sends via WebSocket -->
+			<div class="chat-input-area">
+				<form ws-send hx-trigger="submit" hx-swap="none">
+					<input type="hidden" name="type" value="chat"/>
+					<input type="hidden" name="receiverId" value={ fmt.Sprintf("%d", partner.ID) }/>
+					<textarea 
+						name="message" 
+						class="message-input" 
+						placeholder="Type your message..."
+						rows="1"
+						hx-trigger="keyup changed delay:500ms"
+						hx-post="/api/typing"
+						hx-swap="none"
+						hx-include="[name='receiverId']"
+						required></textarea>
+					<button type="submit" class="btn btn-primary">Send</button>
+				</form>
+				
+				<!-- File upload -->
+				<div class="file-upload-section">
+					<input type="file" class="hidden" id="file-input" 
+						hx-post="/api/file/upload" 
+						hx-encoding="multipart/form-data"
+						hx-target="#file-upload-result"
+						hx-include="[name='receiverId']"/>
+					<button class="btn btn-icon" onclick="document.getElementById('file-input').click()">📎</button>
+				</div>
+				
+				<div id="file-upload-result"></div>
+			</div>
+		} else {
+			@EmptyChat()
+		}
+	</div>
+}
+
+// WebSocketMessage renders a new message that comes via WebSocket
+templ WebSocketMessage(message *models.Message, currentUserID uuid.UUID, senderUsername string) {
+	<div hx-swap-oob="beforeend:#messages">
+		@MessageBubble(message, currentUserID, senderUsername)
+	</div>
+}
+
+// WebSocketTypingIndicator shows when someone is typing
+templ WebSocketTypingIndicator(username string, show bool) {
+	<div hx-swap-oob="innerHTML:#typing-indicator">
+		if show {
+			<div class="typing-indicator">
+				{ username } is typing...
+			</div>
+		}
+	</div>
+}
+
+// WebSocketUserStatus updates user online/offline status
+templ WebSocketUserStatus(userID uuid.UUID, isOnline bool) {
+	<div hx-swap-oob={ fmt.Sprintf("outerHTML:[data-user-id='%d'] .user-status", userID) }>
+		<span class={ "user-status", templ.KV("online", isOnline), templ.KV("offline", !isOnline) }></span>
+	</div>
+}

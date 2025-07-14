@@ -1,0 +1,32 @@
+package components
+
+import (
+	"github.com/google/uuid"
+)
+
+templ FileUploadForm(partnerID uuid.UUID) {
+	<form id="file-upload-form" 
+		hx-encoding="multipart/form-data" 
+		hx-post="/api/file/upload"
+		hx-target="#file-upload-result"
+		hx-swap="outerHTML"
+		_="on htmx:xhr:progress(loaded, total) set #file-progress.value to (loaded/total)*100">
+		<input type="hidden" name="receiverId" value={ partnerID.String() }/>
+		<input type="file" name="file" required/>
+		<button type="submit" class="btn btn-primary">Upload File</button>
+		<progress id="file-progress" value="0" max="100" class="file-upload-progress"></progress>
+	</form>
+	<div id="file-upload-result"></div>
+}
+
+templ FileUploadSuccess(filename string) {
+	<div class="message-box success">
+		File "{ filename }" uploaded successfully!
+	</div>
+}
+
+templ FileUploadError(message string) {
+	<div class="message-box error">
+		Upload failed: { message }
+	</div>
+}
