@@ -1,0 +1,15 @@
+bin/
+
+yarn
+yarn.db
+yarn.db-shm
+yarn.db-wal
+
+.env
+.env.local
+
+# Ignore generated files
+*_templ.go
+
+# Ignore any uploaded files
+uploads/
