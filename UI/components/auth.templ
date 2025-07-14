@@ -6,30 +6,32 @@ templ AuthSection() {
 	<div class="auth-section" id="auth-section">
 		<h2>Join Yarn</h2>
 		<div class="form-group">
-			<input type="text" id="username" placeholder="Username" class="input-field" required/>
+			<input type="text" name="username" id="username" placeholder="Username" class="input-field" required/>
 		</div>
 		<div class="form-group">
-			<input type="text" id="bio" placeholder="Bio (optional)" class="input-field"/>
+			<input type="text" name="bio" id="bio" placeholder="Bio (optional)" class="input-field"/>
 		</div>
 		<div class="form-group">
 			<button 
+				type="button"
 				hx-post="/api/register" 
 				hx-target="#auth-message" 
-				hx-swap="outerHTML"
-				hx-include="#username, #bio"
+				hx-swap="innerHTML"
+				hx-include="[name='username'], [name='bio']"
 				class="btn btn-primary">
 				Register
 			</button>
 			<button 
+				type="button"
 				hx-post="/api/login" 
 				hx-target="#auth-message" 
-				hx-swap="outerHTML"
-				hx-include="#username"
+				hx-swap="innerHTML"
+				hx-include="[name='username']"
 				class="btn btn-secondary">
 				Login
 			</button>
 		</div>
-		<div id="auth-message" class="message-box"></div>
+		<div id="auth-message"></div>
 	</div>
 }
 
@@ -47,31 +49,31 @@ templ UserInfo(user *models.User) {
 }
 
 templ AuthMessage(message string, msgType string) {
-	<div class={ "message-box", msgType }>
+	<div class={ "message-box", msgType, "show" }>
 		{ message }
 	</div>
 }
 
 templ AuthSuccess(user *models.User) {
-	<div class="message-box success">
+	<div class="message-box success show">
 		Registration successful! Welcome, { user.Username }!
 	</div>
 	<script>
-		// Trigger page reload or redirect after successful auth
+		// Trigger HTMX redirect after successful auth
 		setTimeout(() => {
-			window.location.reload();
+			htmx.ajax('GET', '/', {target: 'body', swap: 'outerHTML'});
 		}, 1000);
 	</script>
 }
 
 templ LoginSuccess(user *models.User) {
-	<div class="message-box success">
+	<div class="message-box success show">
 		Login successful! Welcome back, { user.Username }!
 	</div>
 	<script>
-		// Trigger page reload or redirect after successful auth
+		// Trigger HTMX redirect after successful auth
 		setTimeout(() => {
-			window.location.reload();
+			htmx.ajax('GET', '/', {target: 'body', swap: 'outerHTML'});
 		}, 1000);
 	</script>
 }

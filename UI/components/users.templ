@@ -6,14 +6,32 @@ import (
 	"github.com/samcharles93/yarn/internal/models"
 )
 
+func countOtherUsers(users []*models.User, currentUserID uuid.UUID) int {
+	count := 0
+	for _, user := range users {
+		if user.ID != currentUserID {
+			count++
+		}
+	}
+	return count
+}
+
 templ UserList(users []*models.User, currentUserID uuid.UUID) {
 	<div class="user-list-section" id="user-list-section">
 		<h2>Users</h2>
-		<ul class="user-list" id="user-list" hx-get="/api/users" hx-trigger="every 10s" hx-swap="innerHTML">
+		<ul class="user-list" id="user-list">
 			for _, user := range users {
 				if user.ID != currentUserID {
 					@UserItem(user, false)
 				}
+			}
+			if countOtherUsers(users, currentUserID) == 0 {
+				<li class="empty-state">
+					<div class="text-center text-muted">
+						<p>📭 No other users yet</p>
+						<p>Register another account to start chatting!</p>
+					</div>
+				</li>
 			}
 		</ul>
 	</div>

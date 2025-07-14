@@ -33,6 +33,13 @@ body {
     padding: var(--spacing-unit);
 }
 
+h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0 0 1rem 0;
+    color: var(--text-color);
+}
+
 /* Container Layout */
 .container {
     display: flex;
@@ -278,10 +285,15 @@ body {
     align-items: flex-end;
 }
 
+.chat-form {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
 .message-input {
     flex: 1;
-    min-height: 40px;
-    max-height: 120px;
     resize: none;
     padding: 12px;
     border: 1px solid var(--border-color);
@@ -392,6 +404,22 @@ body {
     .message {
         max-width: 85%;
     }
+}
+
+/* Empty States */
+.empty-state {
+    padding: 2rem 1rem;
+    list-style: none;
+}
+
+.empty-state p {
+    margin: 0.5rem 0;
+    font-size: 14px;
+}
+
+.empty-state p:first-child {
+    font-size: 16px;
+    font-weight: 600;
 }
 
 /* Utility Classes */

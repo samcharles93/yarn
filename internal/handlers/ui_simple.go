@@ -22,6 +22,11 @@ func (h *Handler) SimpleUIHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error getting users: %v", err)
 		users = []*models.User{}
 	}
+	
+	log.Printf("SimpleUIHandler - Current user: %v, Total users: %d", currentUser, len(users))
+	for i, user := range users {
+		log.Printf("  User %d: %s (ID: %s)", i, user.Username, user.ID.String())
+	}
 
 	// Render the main page with current user (or nil if not authenticated)
 	component := components.MainPage(currentUser, users)
@@ -37,6 +42,8 @@ func (h *Handler) SimpleAPIRegisterHandler(w http.ResponseWriter, r *http.Reques
 
 	username := r.FormValue("username")
 	bio := r.FormValue("bio")
+	
+	log.Printf("Register request - username: '%s', bio: '%s'", username, bio)
 
 	if username == "" {
 		component := components.AuthMessage("Username cannot be empty", "error")

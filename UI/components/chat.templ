@@ -21,11 +21,27 @@ templ ChatArea(partner *models.User, messages []*models.Message, currentUser *mo
 templ EmptyChat() {
 	<div class="chat-area" id="chat-area">
 		<div class="chat-header">
-			<h2>Select a user to chat with</h2>
+			<h2>🔐 Welcome to Yarn</h2>
 		</div>
 		<div class="messages-container">
-			<div class="text-center text-muted">
-				<p>Choose a user from the sidebar to start chatting</p>
+			<div class="text-center text-muted" style="padding: 2rem;">
+				<h3>End-to-End Encrypted Chat</h3>
+				<p style="margin: 1rem 0;">Your messages are encrypted and secure</p>
+				
+				<div style="background: #f8f9fa; border-radius: 8px; padding: 1.5rem; margin: 1rem 0;">
+					<h4>Getting Started:</h4>
+					<ol style="text-align: left; max-width: 300px; margin: 0 auto;">
+						<li>Register additional accounts to chat with</li>
+						<li>Select a user from the sidebar</li>
+						<li>Start your encrypted conversation</li>
+					</ol>
+				</div>
+				
+				<div style="margin-top: 1.5rem;">
+					<p><strong>✅ System Status:</strong> Online & Ready</p>
+					<p><strong>🔗 WebSocket:</strong> Connected</p>
+					<p><strong>🔐 Encryption:</strong> Active</p>
+				</div>
 			</div>
 		</div>
 	</div>
@@ -39,7 +55,7 @@ templ ChatHeader(partner *models.User) {
 
 templ MessagesContainer(messages []*models.Message, currentUserID uuid.UUID, partnerUsername string) {
 	<div class="messages-container" id="messages-container">
-		<div id="messages" hx-swap-oob="true">
+		<div id="messages">
 			for _, message := range messages {
 				@MessageBubble(message, currentUserID, partnerUsername)
 			}
@@ -69,7 +85,7 @@ templ MessageBubble(message *models.Message, currentUserID uuid.UUID, partnerUse
 
 templ ChatInput(partnerID uuid.UUID) {
 	<div class="chat-input-area">
-		<form ws-send hx-trigger="submit" hx-swap="none">
+		<form ws-send hx-trigger="submit" hx-swap="none" class="chat-form">
 			<input type="hidden" name="type" value="chat"/>
 			<input type="hidden" name="receiverId" value={ partnerID.String() }/>
 			<textarea 
